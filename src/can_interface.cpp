@@ -38,7 +38,7 @@ CanInterface::CanInterface()
 
   struct timeval tv;
   tv.tv_sec = 0;
-  tv.tv_usec = 1000;
+  tv.tv_usec = 100;
   setsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
 }
@@ -51,18 +51,16 @@ CanInterface::~CanInterface()
 void CanInterface::command_callback(const can_msgs::msg::Frame & msg)
 {
   uint32_t can_id_ = msg.id;
-  // can_data_[0] = (msg.data[0]);
-  // can_data_[1] = (msg.data[1]);
-  // can_data_[2] = (msg.data[2]);
-  // can_data_[3] = (msg.data[3]);
-  can_data_[4] = (msg.data[4]) & 0xFF;
-  can_data_[5] = (msg.data[5]>> 8) & 0xFF;
-  can_data_[6] = (msg.data[6] >> 16) & 0xFF;
-  can_data_[7] = (msg.data[7] >> 24) & 0xFF;
+  can_data_[0] = (msg.data[0]);
+  can_data_[1] = (msg.data[1]);
+  can_data_[2] = (msg.data[2]);
+  can_data_[3] = (msg.data[3]);
+  can_data_[4] = (msg.data[4]);
+  can_data_[5] = (msg.data[5]);
+  can_data_[6] = (msg.data[6]);
+  can_data_[7] = (msg.data[7]);
 
   this->TransmitCanFrame(sock_, can_id_, can_data_, sizeof(can_data_));
-  
-  std::cout << "callback" <<std::endl;
 }
 
 int CanInterface::InitCanInterface(const char *ifname)
@@ -111,7 +109,7 @@ int CanInterface::TransmitCanFrame(const int &sock, const uint32_t &id, const ui
     return -1;
   } 
   // printf("Success to transmit can frame - %d bytes is transmitted\n", tx_bytes);
-  RCLCPP_INFO(this->get_logger(), "Sent CAN frame");
+  // RCLCPP_INFO(this->get_logger(), "Sent CAN frame");
   return 0;
 }
 
@@ -139,7 +137,7 @@ int CanInterface::ReceiveCanFrame(const int sock)
       // printf("11bit long std can frame is received\n");
     } else {
       // printf("29bit long ext can frame is received\n");
-      std::cout << frame.can_id << std::endl;
+      // std::cout << frame.can_id << std::endl;
     }
   }
   auto feedback = can_msgs::msg::Frame();
