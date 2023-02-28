@@ -10,12 +10,14 @@ class CanInterface : public rclcpp::Node
     ~CanInterface();
     
     int MainLoop();
+    void receiveThread();
 
   protected:
     void command_callback(const can_msgs::msg::Frame & msg);
     int InitCanInterface(const char *ifname);
     int TransmitCanFrame(const int &sock, const uint32_t &id, const uint8_t *data, const size_t data_len);
     int ReceiveCanFrame(const int sock);
+    
     rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr subscription_;
     rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr publisher_;
     uint8_t can_data_[CAN_FRAME_MAX_LEN] = { 0xa2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -48,6 +50,38 @@ CanInterface::~CanInterface()
   
 }
 
+int CanInterface::InitCanInterface(const char *ifname)
+{
+  int sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+  if (sock == -1) {
+  RCLCPP_ERROR(this->get_logger(), "Fail to create can socket for %s - %m\n", ifname);
+  // printf("Fail to create can socket for %s - %m\n", ifname);
+    return -1;
+  }
+  RCLCPP_INFO(this->get_logger(), "Success to create can socket for %s\n", ifname);
+  // printf("Success to create can socket for %s\n", ifname);
+
+  struct ifreq ifr;
+  strcpy(ifr.ifr_name, ifname);
+  if (ioctl(sock, SIOCGIFINDEX, &ifr) == -1) {
+    perror("Fail to get can interface index -");
+    return -1;
+  }
+  printf("Success to get can interface index: %d\n", ifr.ifr_ifindex);
+
+  struct sockaddr_can addr;
+  addr.can_family = AF_CAN;
+  addr.can_ifindex = ifr.ifr_ifindex;
+  if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+    perror("Fail to bind can socket -");
+    return -1;
+  }
+  RCLCPP_INFO(this->get_logger(), "Success to bind socket for \n");
+
+  return sock;
+}
+
+
 void CanInterface::command_callback(const can_msgs::msg::Frame & msg)
 {
   uint32_t can_id_ = msg.id;
@@ -63,36 +97,6 @@ void CanInterface::command_callback(const can_msgs::msg::Frame & msg)
   this->TransmitCanFrame(sock_, can_id_, can_data_, sizeof(can_data_));
 }
 
-int CanInterface::InitCanInterface(const char *ifname)
-{
-  int sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-  if (sock == -1) {
-  printf("Fail to create can socket for %s - %m\n", ifname);
-    return -1;
-  }
-  printf("Success to create can socket for %s\n", ifname);
-
-  struct ifreq ifr;
-  strcpy(ifr.ifr_name, ifname);
-  int ret = ioctl(sock, SIOCGIFINDEX, &ifr);
-  if (ret == -1) {
-    perror("Fail to get can interface index -");
-    return -1;
-  }
-  printf("Success to get can interface index: %d\n", ifr.ifr_ifindex);
-
-  struct sockaddr_can addr;
-  addr.can_family = AF_CAN;
-  addr.can_ifindex = ifr.ifr_ifindex;
-  ret = bind(sock, (struct sockaddr *)&addr, sizeof(addr));
-  if (ret == -1) {
-    perror("Fail to bind can socket -");
-    return -1;
-  }
-  printf("Success to bind can socket\n");
-
-  return sock;
-}
 
 int CanInterface::TransmitCanFrame(const int &sock, const uint32_t &id, const uint8_t *data, const size_t data_len)
 {
@@ -118,6 +122,7 @@ int CanInterface::ReceiveCanFrame(const int sock)
   struct can_frame frame;
   int rx_bytes = read(sock, &frame, sizeof(frame));
   if (rx_bytes < 0) {
+    // RCLCPP_ERROR(this->get_logger(), "Fail to receive can frame");
     // perror("Fail to receive can frame - ");
     return -1;
   } else if (rx_bytes < (int)sizeof(struct can_frame)) {
@@ -149,9 +154,19 @@ int CanInterface::ReceiveCanFrame(const int sock)
   publisher_->publish(feedback);
   return 0;
 }
+
+void CanInterface::receiveThread()
+  {
+      while (rclcpp::ok())
+      {
+          ReceiveCanFrame(sock_);
+      }
+  }
+
+
 int CanInterface::MainLoop()
 {
-    ReceiveCanFrame(sock_);
+    // ReceiveCanFrame(sock_);
     rclcpp::spin_some(shared_from_this());
   return 0;
 }
@@ -160,10 +175,11 @@ int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
   auto CAN = std::make_shared<CanInterface>();
+  std::thread receive_thread(&CanInterface::receiveThread, CAN);
   while(rclcpp::ok()){
     CAN->MainLoop();
   }
-  
+  receive_thread.join();
   rclcpp::shutdown();
   return 0;
 }
